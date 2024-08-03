@@ -1,5 +1,11 @@
 #include "systemcalls.h"
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -10,12 +16,8 @@
 bool do_system(const char *cmd)
 {
 
-/*
- * TODO  add your code here
- *  Call the system() function with the command set in the cmd
- *   and return a boolean true if the system() call completed with success
- *   or false() if it returned a failure
-*/
+    if (system(cmd))
+        return false;
 
     return true;
 }
@@ -48,20 +50,26 @@ bool do_exec(int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
-
-/*
- * TODO:
- *   Execute a system command by calling fork, execv(),
- *   and wait instead of system (see LSP page 161).
- *   Use the command[0] as the full path to the command to execute
- *   (first argument to execv), and use the remaining arguments
- *   as second argument to the execv() command.
- *
-*/
-
     va_end(args);
 
-    return true;
+    pid_t pid = fork();
+    switch (pid) {
+        case -1:
+            return false;
+        case 0:
+            // Child process
+            execv(command[0], &command[0]);
+            exit(EXIT_FAILURE);
+        default: {
+            // Parent process
+            int wstatus;
+            pid_t result = waitpid(pid, &wstatus, 0);
+            if (result < 0 || wstatus != 0) {
+                return false;
+            }
+            return true;
+        }
+    }
 }
 
 /**
@@ -83,17 +91,32 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
-
-
-/*
- * TODO
- *   Call execv, but first using https://stackoverflow.com/a/13784315/1446624 as a refernce,
- *   redirect standard out to a file specified by outputfile.
- *   The rest of the behaviour is same as do_exec()
- *
-*/
-
     va_end(args);
 
-    return true;
+    pid_t pid = fork();
+    switch (pid) {
+        case -1:
+            return false;
+        case 0: {
+            // Child process
+            int fd = open(outputfile, O_CREAT | O_CLOEXEC | O_TRUNC | O_WRONLY, 0644);
+            if (fd < 0)
+                exit(EXIT_FAILURE);
+
+            if (dup2(fd, STDOUT_FILENO) < 0)
+                exit(EXIT_FAILURE);
+
+            execv(command[0], &command[0]);
+            exit(EXIT_FAILURE);
+        }
+        default: {
+            // Parent process
+            int wstatus;
+            pid_t result = waitpid(pid, &wstatus, 0);
+            if (result < 0 || wstatus != 0) {
+                return false;
+            }
+            return true;
+        }
+    }
 }
